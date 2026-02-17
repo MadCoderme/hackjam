@@ -228,7 +228,7 @@ useHead({
       <div class="h-64 grid grid-cols-2 gap-4">
         <!-- Upload -->
         <Card class="p-4 flex flex-col justify-between">
-           <div>
+           <div v-if="user?.sub">
              <h3 class="font-semibold mb-2">Submit Solution</h3>
              <input type="file" @change="e => selectedFile = (e.target as HTMLInputElement).files?.[0] || null" class="block w-full text-sm text-slate-500
                 file:mr-4 file:py-2 file:px-4
@@ -238,6 +238,9 @@ useHead({
                 hover:file:bg-violet-100
               "/>
            </div>
+            <div v-else class="text-center text-sm text-muted-foreground">
+              Please <NuxtLink to="/login" class="text-primary hover:underline">log in</NuxtLink> to submit your solution.
+            </div>
            <Button @click="handleTaskSubmit" :disabled="isProcessing || !selectedFile" class="w-full">
              <LucideLoader2 v-if="isProcessing" class="mr-2 h-4 w-4 animate-spin" />
              <LucidePlay v-else class="mr-2 h-4 w-4" /> 
