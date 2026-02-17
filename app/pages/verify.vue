@@ -9,12 +9,16 @@ onMounted(async() => {
             .eq('id', user.value.sub)
         if (!error) {
             if (!data[0]?.id) {
-                await supabase.from('profiles')
+                const insertion = await supabase.from('profiles')
                     .insert({
                         id: user.value.sub,
-                        username: user.value.user_metadata.user_name
+                        username: user.value?.user_metadata?.user_name
                     })
-                navigateTo('/')
+                if (!insertion.error) {
+                    navigateTo('/')
+                } else {
+                    console.error('Error inserting profile:', insertion.error)
+                }
             }
         }
     }
