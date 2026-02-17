@@ -70,6 +70,10 @@ const formatDate = (dateStr: string) => {
 }
 
 onMounted(() => {
+  if (!user.value.sub) {
+    navigateTo('/login')
+    return
+  }
   fetchPublicProfile()
 })
 
