@@ -202,7 +202,7 @@ const formatDate = (dateStr: string) => {
 }
 
 onMounted(() => {
-  if (!user.value.sub) {
+  if (!user?.value) {
     navigateTo('/login')
     return
   }
