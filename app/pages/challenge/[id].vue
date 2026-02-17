@@ -159,6 +159,13 @@ onMounted(() => {
 onUnmounted(() => {
   if (realtimeChannel) supabase.removeChannel(realtimeChannel)
 })
+
+useHead({
+  title: 'HackJam - Challenge Workspace',
+  meta: [
+    { name: 'description', content: 'Join the coding challenge workspace on HackJam. Solve tasks, submit solutions, and see real-time feedback on your progress.' }
+  ]
+})
 </script>
 
 <template>

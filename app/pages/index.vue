@@ -10,6 +10,12 @@ const { data: challenges, pending } = await useAsyncData('challenges', async () 
   const { data } = await supabase.from('challenges').select('*').order('start_time')
   return data
 })
+useHead({
+  title: 'HackJam - Tiny Hackathons',
+  meta: [
+    { name: 'description', content: 'Discover and join active hackathons on HackJam. Compete, collaborate, and innovate with developers worldwide.' }
+  ]
+})
 </script>
 
 <template>

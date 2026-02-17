@@ -59,6 +59,13 @@ onMounted(() => {
   fetchLeaderboard()
   // Add realtime listener here if desired
 })
+
+useHead({
+  title: 'HackJam - Leaderboard',
+  meta: [
+    { name: 'description', content: 'View the latest leaderboard standings for teams and individual participants on HackJam. See who is leading the hackathon competitions.' }
+  ]
+})
 </script>
 
 <template>

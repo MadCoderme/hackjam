@@ -31,6 +31,12 @@ const fetchPublicProfile = async () => {
     if (profileData) {
       profile.value = profileData
       team.value = profileData.teams
+      useHead({
+        title: `HackJam - ${profileData.username}'s Profile`,
+        meta: [
+          { name: 'description', content: `View the profile of ${profileData.username} on HackJam. See their hackathon achievements, submissions, and team affiliations.` }
+        ]
+      })
     }
 
     // 2. Fetch Submissions with relations
@@ -66,6 +72,7 @@ const formatDate = (dateStr: string) => {
 onMounted(() => {
   fetchPublicProfile()
 })
+
 </script>
 
 <template>
