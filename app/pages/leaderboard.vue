@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { ref, onMounted, watch } from 'vue'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 
 const supabase = useSupabaseClient()
 const mode = ref('teams') // 'teams' | 'individuals'
@@ -21,30 +20,45 @@ const fetchLeaderboard = async () => {
       .order('total_score', { ascending: false })
     leaderboardData.value = data || []
   } else {
-    // Individual Submissions (Sum of max scores per problem)
-    // Note: Complex aggregation is better done in SQL Views, 
-    // but here is a simple fetch of raw submissions to demo structure
+    // Individual Submissions
+    // We fetch sub_problem_id to deduplicate scores
     const { data } = await supabase
       .from('profiles')
       .select(`
         id,
         username,
-        submissions ( score )
+        submissions ( score, sub_problem_id )
       `)
     
-    // JS Aggregation for Individual (Simplified)
-    // In production: Create an 'individual_standings' SQL View similar to teams
-    const calculated = data?.map((p: any) => ({
-      id: p.id,
-      name: p.username,
-      total_score: p.submissions.reduce((a: number, b: any) => a + b.score, 0)
-    })).sort((a, b) => b.total_score - a.total_score)
+    // JS Aggregation: Sum only the MAX score per sub_problem
+    const calculated = data?.map((p: any) => {
+      const bestScores: Record<string, number> = {}
+
+      p.submissions.forEach((sub: any) => {
+        const pid = sub.sub_problem_id
+        const score = sub.score || 0
+        
+        // If we haven't seen this problem yet, or this score is higher, update it
+        if (bestScores[pid] === undefined || score > bestScores[pid]) {
+          bestScores[pid] = score
+        }
+      })
+
+      // Sum the values of the best scores
+      const total = Object.values(bestScores).reduce((sum, score) => sum + score, 0)
+
+      return {
+        id: p.id,
+        name: p.username,
+        total_score: total
+      }
+    }).sort((a, b) => b.total_score - a.total_score)
     
     leaderboardData.value = calculated || []
   }
 }
 
-const handleClick = (entry) => {
+const handleClick = (entry: any) => {
   if (mode.value === 'teams') {
     navigateTo(`/team/${entry.team_id}`)
   } else {
@@ -57,13 +71,12 @@ watch(mode, () => fetchLeaderboard())
 
 onMounted(() => {
   fetchLeaderboard()
-  // Add realtime listener here if desired
 })
 
 useHead({
   title: 'HackJam - Leaderboard',
   meta: [
-    { name: 'description', content: 'View the latest leaderboard standings for teams and individual participants on HackJam. See who is leading the hackathon competitions.' }
+    { name: 'description', content: 'View the latest leaderboard standings.' }
   ]
 })
 </script>
@@ -92,7 +105,7 @@ useHead({
           </TableRow>
         </TableHeader>
         <TableBody>
-          <TableRow v-for="(entry, index) in leaderboardData" :key="index" @click="handleClick(entry)" class="cursor-pointer hover:bg-accent">
+          <TableRow v-for="(entry, index) in leaderboardData" :key="index" @click="handleClick(entry)" class="cursor-pointer hover:bg-accent transition-colors">
             <TableCell class="font-medium text-lg">
                <span v-if="index === 0">🥇</span>
                <span v-else-if="index === 1">🥈</span>

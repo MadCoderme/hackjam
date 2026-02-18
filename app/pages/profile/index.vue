@@ -299,7 +299,7 @@ onMounted(() => {
                     <AvatarFallback>{{ member.username?.substring(0,2).toUpperCase() }}</AvatarFallback>
                   </Avatar>
                   <span class="text-sm font-medium">
-                     <NuxtLink :to="`/user/${member.id}`" class="hover:underline">
+                     <NuxtLink :to="`/profile/${member.id}`" class="hover:underline">
                         {{ member.username }}
                      </NuxtLink>
                   </span>

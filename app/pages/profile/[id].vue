@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -33,17 +33,15 @@ const fetchPublicProfile = async () => {
       team.value = profileData.teams
       useHead({
         title: `HackJam - ${profileData.username}'s Profile`,
-        meta: [
-          { name: 'description', content: `View the profile of ${profileData.username} on HackJam. See their hackathon achievements, submissions, and team affiliations.` }
-        ]
       })
     }
 
     // 2. Fetch Submissions with relations
+    // Added sub_problem_id to select
     const { data: subs } = await supabase
       .from('submissions')
       .select(`
-        id, score, status, execution_time, created_at,
+        id, score, status, execution_time, created_at, sub_problem_id,
         sub_problems ( title, points, challenges ( title ) )
       `)
       .eq('user_id', userId)
@@ -52,9 +50,28 @@ const fetchPublicProfile = async () => {
 
     if (subs) {
       submissions.value = subs
-      // Calculate Stats
-      stats.value.totalScore = subs.reduce((acc, curr) => acc + (curr.score || 0), 0)
-      stats.value.passed = subs.filter(s => s.status === 'Passed').length
+      
+      // --- UPDATED CALCULATION LOGIC ---
+      const bestScores: Record<string, number> = {}
+      const solvedProblems = new Set<string>()
+
+      subs.forEach(s => {
+        const pid = s.sub_problem_id
+        const score = s.score || 0
+        
+        // Track Best Score per Problem
+        if (bestScores[pid] === undefined || score > bestScores[pid]) {
+          bestScores[pid] = score
+        }
+
+        // Track Unique Passed Solutions
+        if (s.status === 'Passed') {
+          solvedProblems.add(pid)
+        }
+      })
+
+      stats.value.totalScore = Object.values(bestScores).reduce((a, b) => a + b, 0)
+      stats.value.passed = solvedProblems.size
     }
 
   } catch (error) {
@@ -108,7 +125,7 @@ onMounted(() => {
           </div>
           <div>
             <div class="text-2xl font-bold text-green-500">{{ stats.passed }}</div>
-            <div class="text-xs text-muted-foreground uppercase font-bold">Solutions</div>
+            <div class="text-xs text-muted-foreground uppercase font-bold">Tasks Solved</div>
           </div>
         </div>
       </CardContent>
