@@ -9,6 +9,10 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const signup = async() => {
+    if (!email.value || !password.value || !username.value) {
+        toast.error('All the fields are required')
+        return
+    }
     loading.value = true
     const { data, error } = await supabase.auth.signUp({
         email: email.value,

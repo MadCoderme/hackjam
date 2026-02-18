@@ -19,6 +19,7 @@ const challengeId = route.params.id as string
 const tasks = ref<any[]>([])
 const activeTaskId = ref<string | null>(null)
 const selectedFile = ref<File | null>(null)
+const pastedCode = ref<string>('')
 const isProcessing = ref(false)
 const terminalOutput = ref<string[]>(['> Select a task to begin...'])
 let realtimeChannel: RealtimeChannel | null = null
@@ -71,17 +72,31 @@ const updateLocalTaskState = (sub: any) => {
 
 // 2. File Upload Logic
 const handleTaskSubmit = async () => {
-  if (!selectedFile.value || !activeTaskId.value) return
+  const hasFile = !!selectedFile.value
+  const hasPaste = pastedCode.value && pastedCode.value.trim().length > 0
+  if (!hasFile && !hasPaste) return
+  if (!activeTaskId.value) return
+
   isProcessing.value = true
   terminalOutput.value = [`> Uploading solution for Task: ${activeTask.value.title}...`]
 
   try {
-    // Note: using user.value?.sub is safer than .sub usually
-    const userId = user.value?.sub 
-    const fileName = `${userId}/${activeTaskId.value}/${Date.now()}_${selectedFile.value.name}`
-    
-    const { data: uploadData, error: uploadErr } = await supabase.storage.from('solutions').upload(fileName, selectedFile.value)
-    if (uploadErr) throw uploadErr
+    const userId = user.value?.sub
+
+    let uploadData: any = null
+    // Prefer file when provided, otherwise upload pasted code as a blob
+    if (hasFile && selectedFile.value) {
+      const fileName = `${userId}/${activeTaskId.value}/${Date.now()}_${selectedFile.value.name}`
+      const { data, error: uploadErr } = await supabase.storage.from('solutions').upload(fileName, selectedFile.value)
+      if (uploadErr) throw uploadErr
+      uploadData = data
+    } else {
+      const fileName = `${userId}/${activeTaskId.value}/${Date.now()}_pasted_solution.txt`
+      const blob = new Blob([pastedCode.value], { type: 'text/plain' })
+      const { data, error: uploadErr } = await supabase.storage.from('solutions').upload(fileName, blob)
+      if (uploadErr) throw uploadErr
+      uploadData = data
+    }
 
     const { error: dbErr } = await supabase.from('submissions').insert({
       user_id: userId,
@@ -90,13 +105,17 @@ const handleTaskSubmit = async () => {
       code_url: uploadData.path,
       status: 'Pending'
     })
-    
+
     if (dbErr) throw dbErr
     terminalOutput.value.push('> Queued. Waiting for Judge...')
 
     // Optimistic Update
     const task = tasks.value.find(t => t.id === activeTaskId.value)
     if (task) task.status = 'Processing'
+
+    // Clear pasted code / file selection after submit
+    selectedFile.value = null
+    pastedCode.value = ''
 
   } catch (err: any) {
     terminalOutput.value.push(`Error: ${err.message}`)
@@ -226,26 +245,41 @@ useHead({
 
       <!-- Bottom Action Area -->
       <div class="h-64 grid grid-cols-2 gap-4">
-        <!-- Upload -->
+        <!-- Submission (Tabs: Upload / Paste) -->
         <Card class="p-4 flex flex-col justify-between">
-           <div v-if="user?.sub">
-             <h3 class="font-semibold mb-2">Submit Solution</h3>
-             <input type="file" @change="e => selectedFile = (e.target as HTMLInputElement).files?.[0] || null" class="block w-full text-sm text-slate-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-violet-50 file:text-violet-700
-                hover:file:bg-violet-100
-              "/>
-           </div>
-            <div v-else class="text-center text-sm text-muted-foreground">
-              Please <NuxtLink to="/login" class="text-primary hover:underline">log in</NuxtLink> to submit your solution.
-            </div>
-           <Button @click="handleTaskSubmit" :disabled="isProcessing || !selectedFile" class="w-full">
-             <LucideLoader2 v-if="isProcessing" class="mr-2 h-4 w-4 animate-spin" />
-             <LucidePlay v-else class="mr-2 h-4 w-4" /> 
-             {{ isProcessing ? 'Evaluating...' : 'Run Tests' }}
-           </Button>
+          <div v-if="user?.sub">
+            <h3 class="font-semibold mb-2">Submit Solution</h3>
+            <Tabs defaultValue="upload">
+              <TabsList class="mb-2">
+                <TabsTrigger value="upload">Upload</TabsTrigger>
+                <TabsTrigger value="paste">Paste</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="upload">
+                <input type="file" @change="e => selectedFile = (e.target as HTMLInputElement).files?.[0] || null" class="block w-full text-sm text-slate-500
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-full file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-violet-50 file:text-violet-700
+                  hover:file:bg-violet-100
+                 "/>
+              </TabsContent>
+
+              <TabsContent value="paste">
+                <div class="text-xs text-muted-foreground mb-2">Paste your code below</div>
+                <textarea v-model="pastedCode" placeholder="Paste your solution here..." class="w-full h-36 resize-none rounded-md border bg-transparent p-2 text-xs font-mono"></textarea>
+              </TabsContent>
+            </Tabs>
+          </div>
+          <div v-else class="text-center text-sm text-muted-foreground">
+            Please <NuxtLink to="/login" class="text-primary hover:underline">log in</NuxtLink> to submit your solution.
+          </div>
+
+          <Button @click="handleTaskSubmit" :disabled="isProcessing || (!selectedFile && !pastedCode.trim())" class="w-full">
+            <LucideLoader2 v-if="isProcessing" class="mr-2 h-4 w-4 animate-spin" />
+            <LucidePlay v-else class="mr-2 h-4 w-4" /> 
+            {{ isProcessing ? 'Evaluating...' : 'Run Tests' }}
+          </Button>
         </Card>
 
         <!-- Terminal -->

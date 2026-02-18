@@ -30,7 +30,14 @@ export default defineNuxtConfig({
     redirect: false,
     redirectOptions: {
       login: '/login',
-      callback: '/confirm',
+      callback: '/verify',
+    }
+  },
+  runtimeConfig: {
+    public: {
+      posthogPublicKey: 'phc_sKbYiizWB6NEGZC5IW6CK21lf8o073HDQ9flCuxkbq9',
+      posthogHost: 'https://us.i.posthog.com',
+      posthogDefaults: '2026-01-30'
     }
   }
 })
