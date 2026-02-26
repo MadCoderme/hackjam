@@ -19,7 +19,7 @@ useHead({
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="space-y-8 min-h-[80vh]">
     <h1 class="text-3xl font-bold tracking-tight">Active Hackathons</h1>
 
     <div v-if="pending">Loading events...</div>
@@ -43,7 +43,7 @@ useHead({
         </CardContent>
 
         <CardFooter>
-          <Button class="w-full" as-child v-if="challenge.status === 'Live'">
+          <Button class="w-full" as-child v-if="challenge.status !== 'Upcoming'">
             <NuxtLink :to="`/challenge/${challenge.id}`">
               Enter Workspace <LucideArrowRight class="ml-2 h-4 w-4" />
             </NuxtLink>

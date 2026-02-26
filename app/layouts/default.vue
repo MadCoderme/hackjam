@@ -25,16 +25,20 @@ const user = useSupabaseUser()
         <div class="flex items-center gap-4">
           <NuxtLink class="flex items-center gap-2 text-sm text-muted-foreground" to="/profile">
             <LucideUser class="h-4 w-4" />
-            <span>{{ user?.user_metadata.user_name }}</span>
+            <span>{{ user?.user_metadata.user_name  ?? "Login" }}</span>
           </NuxtLink>
         </div>
       </div>
     </header>
 
     <!-- Main Content -->
-    <main class="container p-6">
+    <main class="container flex-1 p-6">
       <slot />
       <Toaster position="top-right" richColors />
     </main>
+
+    <footer class="border-t py-6 text-center text-sm text-muted-foreground">
+      Made with ❤️ by CUET CSE-24
+    </footer>
   </div>
 </template>
