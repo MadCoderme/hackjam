@@ -27,6 +27,7 @@ const supabase = useSupabaseClient()
 const challengeId = route.params.id as string
 
 // State
+const challenge = ref<any>(null)
 const tasks = ref<any[]>([])
 const activeTaskId = ref<string | null>(null)
 const selectedFile = ref<File | null>(null)
@@ -46,7 +47,7 @@ const activeTask = computed(() => tasks.value.find(t => t.id === activeTaskId.va
 const loadChallengeData = async () => {
   const { data : challengeData } = await supabase
     .from('challenges')
-    .select('title, description, start_time')
+    .select('title, description, status, start_time')
     .eq('id', challengeId)
     .maybeSingle()
 
@@ -55,6 +56,7 @@ const loadChallengeData = async () => {
       toast.error("This challenge has not started yet");
       return
     }
+    challenge.value = challengeData
     useHead({
       title: 'HackJam - ' + challengeData.title,
       meta: [
@@ -389,6 +391,7 @@ onUnmounted(() => {
                   <LucideRefreshCw :class="['h-4 w-4', isLeaderboardLoading ? 'animate-spin' : '']" />
                 </Button>
               </CardHeader>
+              <Button class="mx-5" v-if="challenge.status === 'Ended'" @click="navigateTo(`/share/${challengeId}`)">Get Your Rank Card</Button>
               <Separator class="shrink-0" />
               
               <ScrollArea class="flex-1 h-full">
