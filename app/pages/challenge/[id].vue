@@ -318,16 +318,15 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="grid h-[calc(100vh-8rem)] grid-cols-12 gap-6">
+    <div class="grid h-[calc(100vh-8rem)] grid-cols-12 gap-6">
     
-     <!-- LEFT PANEL: Sidebar -->
-    <!-- 1. PARENT: Explicit h-full and overflow-hidden to contain the sidebar in the grid cell -->
+    <!-- LEFT PANEL: Sidebar -->
+    <!-- Added 'h-full overflow-hidden' to constrain the panel within the grid cell -->
     <div class="col-span-3 flex flex-col h-full overflow-hidden">
       
       <Card class="h-full flex flex-col border-none shadow-none bg-transparent">
         <Tabs default-value="tasks" class="h-full flex flex-col">
           
-          <!-- Tab Switcher (shrink-0 prevents it from being squashed) -->
           <TabsList class="grid w-full grid-cols-2 mb-2 shrink-0">
             <TabsTrigger value="tasks" class="flex items-center gap-2">
               <LucideListOrdered class="h-4 w-4" /> Tasks
@@ -338,19 +337,17 @@ onUnmounted(() => {
           </TabsList>
 
           <!-- TAB 1: TASKS -->
-          <!-- 2. CONTENT WRAPPER: flex-1 to fill space, min-h-0 to force scrollbar -->
+          <!-- Critical: 'min-h-0' allows flex child to shrink and scroll -->
           <TabsContent value="tasks" class="flex-1 flex flex-col min-h-0 mt-0 data-[state=active]:flex">
-            <!-- 3. INNER CARD: flex-1 and overflow-hidden to constrain the ScrollArea -->
             <Card class="flex-1 flex flex-col overflow-hidden border bg-card">
               <CardHeader class="pb-3 px-4 pt-4 shrink-0">
                 <CardTitle class="text-lg">Problem Set</CardTitle>
                 <p class="text-xs text-muted-foreground">Solve in any order</p>
               </CardHeader>
               <Separator class="shrink-0" />
-              
-              <!-- 4. SCROLL AREA: flex-1 h-full to fill the constrained parent -->
+              <!-- Removed 'h-full' to rely on flex-1 for correct height calculation -->
               <ScrollArea class="flex-1 h-full">
-                <div class="p-4 space-y-2">
+                <div class="p-4 space-y-2 pb-50">
                   <button
                     v-for="task in tasks" 
                     :key="task.id"
