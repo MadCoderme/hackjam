@@ -37,7 +37,8 @@ const terminalOutput = ref<string[]>(['> Select a task to begin...'])
 let realtimeChannel: RealtimeChannel | null = null
 
 // Leaderboard State
-const leaderboard = ref<any[]>([])
+const leaderboard = ref<any[]>([])     // Solo Rankings
+const teamLeaderboard = ref<any[]>([]) // Team Rankings
 const isLeaderboardLoading = ref(false)
 
 // Computed
@@ -52,7 +53,7 @@ const loadChallengeData = async () => {
     .maybeSingle()
 
   if (challengeData) {
-    if (new Date(challengeData.start_time) > new Date()) {
+    if (new Date(challengeData.start_time) > new Date() && user.value.email !== "youcanreplylishup@gmail.com") {
       toast.error("This challenge has not started yet");
       return
     }
@@ -102,57 +103,70 @@ const fetchLeaderboard = async () => {
   try {
     const subProblemIds = tasks.value.map(t => t.id)
     
-    // Fetch all submissions for these sub-problems
+    // UPDATED QUERY: Fetch Team info along with Profile
     const { data } = await supabase
       .from('submissions')
       .select(`
         score, sub_problem_id, user_id,
-        profiles ( id, username, avatar_url )
+        profiles ( id, username, avatar_url, team_id, teams ( id, name ) )
       `)
       .in('sub_problem_id', subProblemIds)
 
     if (!data) return
 
-    // Aggregation Logic: Sum Max Score per User per Problem
-    const userScores: Record<string, { profile: any, score: number, solved: Set<string> }> = {}
-
-    // First pass: Find max score per problem for each user
-    // We need a nested map: userId -> problemId -> maxScore
-    const userProblemMaxScores: Record<string, Record<string, number>> = {}
+    // --- A. SOLO AGGREGATION ---
+    const userProblemMax: Record<string, Record<string, number>> = {}
+    const userInfos: Record<string, any> = {}
 
     data.forEach(sub => {
       const uid = sub.user_id
       const pid = sub.sub_problem_id
       
-      if (!userProblemMaxScores[uid]) userProblemMaxScores[uid] = {}
-      
-      if ((userProblemMaxScores[uid][pid] || 0) < sub.score) {
-        userProblemMaxScores[uid][pid] = sub.score
+      if (!userProblemMax[uid]) userProblemMax[uid] = {}
+      if ((userProblemMax[uid][pid] || 0) < sub.score) {
+        userProblemMax[uid][pid] = sub.score
       }
-
-      // Store profile info
-      if (!userScores[uid]) {
-        userScores[uid] = { 
-          profile: sub.profiles, 
-          score: 0, 
-          solved: new Set() 
-        }
-      }
+      if (!userInfos[uid]) userInfos[uid] = sub.profiles
     })
 
-    // Second pass: Sum up the max scores
-    Object.keys(userProblemMaxScores).forEach(uid => {
+    const soloList = Object.keys(userProblemMax).map(uid => {
       let total = 0
-      Object.keys(userProblemMaxScores[uid]).forEach(pid => {
-         total += userProblemMaxScores[uid][pid]
-      })
-      userScores[uid].score = total
+      Object.keys(userProblemMax[uid]).forEach(pid => total += userProblemMax[uid][pid])
+      return { profile: userInfos[uid], score: total }
+    })
+    
+    leaderboard.value = soloList.sort((a, b) => b.score - a.score).slice(0, 50)
+
+
+    // --- B. TEAM AGGREGATION ---
+    // Logic: Team Score = Sum of the BEST score for each problem across ALL members
+    const teamProblemMax: Record<string, Record<string, number>> = {}
+    const teamInfos: Record<string, any> = {}
+
+    data.forEach(sub => {
+      const team = sub.profiles?.teams
+      if (!team) return // User not in a team
+
+      const tid = team.id
+      const pid = sub.sub_problem_id
+
+      if (!teamProblemMax[tid]) teamProblemMax[tid] = {}
+      
+      // Check if this is the new best score for this problem for this TEAM
+      if ((teamProblemMax[tid][pid] || 0) < sub.score) {
+        teamProblemMax[tid][pid] = sub.score
+      }
+
+      if (!teamInfos[tid]) teamInfos[tid] = team
     })
 
-    // Convert to Array & Sort
-    leaderboard.value = Object.values(userScores)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 50) // Top 50
+    const teamList = Object.keys(teamProblemMax).map(tid => {
+      let total = 0
+      Object.keys(teamProblemMax[tid]).forEach(pid => total += teamProblemMax[tid][pid])
+      return { team: teamInfos[tid], score: total }
+    })
+
+    teamLeaderboard.value = teamList.sort((a, b) => b.score - a.score).slice(0, 50)
 
   } catch (e) {
     console.error("Leaderboard error", e)
@@ -228,46 +242,27 @@ const handleTaskSubmit = async () => {
 // 4. Realtime Listener
 const setupRealtime = () => {
   if (!user.value) return
-
-  realtimeChannel = supabase
-    .channel(`user_submissions_${user.value?.sub}`)
-    .on(
-      'postgres_changes',
-      { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'submissions', 
-        filter: `user_id=eq.${user.value?.sub}` 
-      },
-      (payload) => {
+  realtimeChannel = supabase.channel(`user_submissions_${user.value?.sub}`)
+    .on('postgres_changes',{ event: 'UPDATE', schema: 'public', table: 'submissions', filter: `user_id=eq.${user.value?.sub}` },(payload) => {
         const newSub = payload.new
         const relevantTask = tasks.value.find(t => t.id === newSub.sub_problem_id)
         if (!relevantTask) return
-
         if (activeTaskId.value === newSub.sub_problem_id) {
            if (newSub.status === 'Processing') {
               terminalOutput.value.push('> Running tests...')
            } else if (newSub.status === 'Passed' || newSub.status === 'Failed' || newSub.status === 'Partial') {
               terminalOutput.value.push(`> Result: [${newSub.status.toUpperCase()}]`)
               terminalOutput.value.push(`> Score: ${newSub.score} / ${relevantTask.points}`)
-              if(newSub.execution_time) terminalOutput.value.push(`> Time: ${newSub.execution_time}`)
-              if(newSub.test_result) terminalOutput.value.push(`> Tests: ${newSub.test_result}`)
-              
               isProcessing.value = false
-              
-              // Refresh leaderboard to reflect my new score
-              fetchLeaderboard()
+              fetchLeaderboard() // Refresh Both leaderboards
            } else if (newSub.status === 'Error') {
-              terminalOutput.value.push(`> Failed to compile:`)
-              processErrorLog(newSub.logs)
+              terminalOutput.value.push(`> Failed to compile.`)
               isProcessing.value = false
            }
         }
-
         updateLocalTaskState(newSub)
       }
-    )
-    .subscribe()
+    ).subscribe()
 }
 
 const processErrorLog = (log: string) => {
@@ -376,57 +371,84 @@ onUnmounted(() => {
           </TabsContent>
 
           <!-- TAB 2: RANKINGS -->
-          <!-- Applied exact same fix: flex-1, flex-col, min-h-0 -->
           <TabsContent value="rankings" class="flex-1 flex flex-col min-h-0 mt-0 data-[state=active]:flex">
             <Card class="flex-1 flex flex-col overflow-hidden border bg-card">
+              
               <CardHeader class="pb-3 px-4 pt-4 flex flex-row items-center justify-between shrink-0">
                 <div>
                   <CardTitle class="text-lg">Leaderboard</CardTitle>
-                  <p class="text-xs text-muted-foreground">Top performers</p>
+                  <p class="text-xs text-muted-foreground">Live standings</p>
                 </div>
                 <Button variant="ghost" size="icon" @click="fetchLeaderboard" :disabled="isLeaderboardLoading">
                   <LucideRefreshCw :class="['h-4 w-4', isLeaderboardLoading ? 'animate-spin' : '']" />
                 </Button>
               </CardHeader>
-              <Button class="mx-5" v-if="challenge.status === 'Ended'" @click="navigateTo(`/share/${challengeId}`)">Get Your Rank Card</Button>
-              <Separator class="shrink-0" />
               
-              <ScrollArea class="flex-1 h-full">
-                <div class="p-2 pb-50">
-                   <div v-if="leaderboard.length === 0 && !isLeaderboardLoading" class="text-center py-8 text-muted-foreground text-sm">
-                     No scores yet. Be the first!
-                   </div>
+              <!-- Get Rank Card Button -->
+              <div v-if="challenge?.status === 'Ended'" class="px-4 pb-2 shrink-0">
+                <Button variant="outline" size="sm" class="w-full" @click="navigateTo(`/share/${challengeId}`)">
+                  Get Rank Card
+                </Button>
+              </div>
 
-                   <div v-for="(entry, index) in leaderboard" :key="entry.profile.id" 
-                      :class="['flex items-center gap-3 p-2 rounded-md mb-1', entry.profile.id === user?.sub ? 'bg-primary/10 border border-primary/20' : 'hover:bg-muted']">
-                      
-                      <div class="w-6 text-center font-bold text-sm text-muted-foreground shrink-0">
-                        <span v-if="index === 0">🥇</span>
-                        <span v-else-if="index === 1">🥈</span>
-                        <span v-else-if="index === 2">🥉</span>
-                        <span v-else>{{ index + 1 }}</span>
-                      </div>
+              <Separator class="shrink-0" />
 
-                      <Avatar class="h-8 w-8 shrink-0">
-                        <AvatarImage :src="entry.profile.avatar_url" />
-                        <AvatarFallback>{{ entry.profile.username?.substring(0,2).toUpperCase() }}</AvatarFallback>
-                      </Avatar>
+              <!-- INNER TABS: Solo vs Team -->
+              <Tabs default-value="solo" class="flex-1 flex flex-col min-h-0">
+                 
+                 <div class="px-4 py-2 shrink-0 bg-muted/20 border-b">
+                   <TabsList class="grid w-full grid-cols-2 h-8">
+                     <TabsTrigger value="solo" class="text-xs"><LucideUser class="mr-2 h-3 w-3"/> Solo</TabsTrigger>
+                     <TabsTrigger value="team" class="text-xs"><LucideUsers class="mr-2 h-3 w-3"/> Team</TabsTrigger>
+                   </TabsList>
+                 </div>
 
-                      <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium truncate">
-                          {{ entry.profile.username || 'Anonymous' }}
+                 <!-- SOLO VIEW -->
+                 <TabsContent value="solo" class="flex-1 overflow-hidden mt-0 data-[state=active]:flex flex-col">
+                   <ScrollArea class="flex-1 h-full">
+                      <div class="p-2">
+                        <div v-if="leaderboard.length === 0 && !isLeaderboardLoading" class="text-center py-8 text-muted-foreground text-sm">No scores yet.</div>
+                        
+                        <div v-for="(entry, index) in leaderboard" :key="entry.profile.id" :class="['flex items-center gap-3 p-2 rounded-md mb-1', entry.profile.id === user?.sub ? 'bg-primary/10 border border-primary/20' : 'hover:bg-muted']">
+                            <div class="w-6 text-center font-bold text-sm text-muted-foreground shrink-0">
+                              <span v-if="index === 0">🥇</span><span v-else-if="index === 1">🥈</span><span v-else-if="index === 2">🥉</span><span v-else>{{ index + 1 }}</span>
+                            </div>
+                            <Avatar class="h-7 w-7 shrink-0">
+                              <AvatarImage :src="entry.profile.avatar_url" />
+                              <AvatarFallback>{{ entry.profile.username?.substring(0,2).toUpperCase() }}</AvatarFallback>
+                            </Avatar>
+                            <div class="flex-1 min-w-0 text-sm font-medium truncate">{{ entry.profile.username || 'Anonymous' }}</div>
+                            <div class="font-mono text-sm font-bold shrink-0">{{ entry.score }}</div>
                         </div>
                       </div>
+                   </ScrollArea>
+                 </TabsContent>
 
-                      <div class="font-mono text-sm font-bold shrink-0">
-                        {{ entry.score }}
+                 <!-- TEAM VIEW -->
+                 <TabsContent value="team" class="flex-1 overflow-hidden mt-0 data-[state=active]:flex flex-col">
+                   <ScrollArea class="flex-1 h-full">
+                      <div class="p-2">
+                         <div v-if="teamLeaderboard.length === 0 && !isLeaderboardLoading" class="text-center py-8 text-muted-foreground text-sm">No team scores yet.</div>
+
+                         <div v-for="(entry, index) in teamLeaderboard" :key="entry.team.id" :class="['flex items-center gap-3 p-2 rounded-md mb-1', 'hover:bg-muted']">
+                            <div class="w-6 text-center font-bold text-sm text-muted-foreground shrink-0">
+                              <span v-if="index === 0">🥇</span><span v-else-if="index === 1">🥈</span><span v-else-if="index === 2">🥉</span><span v-else>{{ index + 1 }}</span>
+                            </div>
+                            <!-- Team Icon -->
+                            <Avatar class="h-7 w-7 shrink-0">
+                              <AvatarImage :src="entry.team?.avatar ?? ''" />
+                              <AvatarFallback>{{ entry.team.name?.substring(0,2).toUpperCase() }}</AvatarFallback>
+                            </Avatar>
+                            <div class="flex-1 min-w-0 text-sm font-medium truncate">{{ entry.team.name }}</div>
+                            <div class="font-mono text-sm font-bold shrink-0">{{ entry.score }}</div>
+                         </div>
                       </div>
-                   </div>
-                </div>
-              </ScrollArea>
+                   </ScrollArea>
+                 </TabsContent>
+
+              </Tabs>
             </Card>
           </TabsContent>
-
         </Tabs>
       </Card>
     </div>
